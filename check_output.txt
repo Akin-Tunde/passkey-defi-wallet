@@ -1,0 +1,209 @@
+unable to read file ~/.clarinet/clarinetrc.toml
+warning: use of potentially unchecked data
+--> contracts\passkey-registry.clar:115:20
+      device-type: device-type,
+                   ^~~~~~~~~~~
+note:: source of untrusted input here
+    (device-type (string-ascii 50))
+     ^~~~~~~~~~~
+warning: use of potentially unchecked data
+--> contracts\passkey-registry.clar:148:19
+      passkey-id: passkey-id,
+                  ^~~~~~~~~~
+note:: source of untrusted input here
+(define-public (update-passkey-usage (passkey-id (buff 65)))
+                                      ^~~~~~~~~~
+warning: use of potentially unchecked data
+--> contracts\passkey-registry.clar:171:19
+      passkey-id: passkey-id,
+                  ^~~~~~~~~~
+note:: source of untrusted input here
+(define-public (deactivate-passkey (passkey-id (buff 65)))
+                                    ^~~~~~~~~~
+warning: use of potentially unchecked data
+--> contracts\passkey-registry.clar:194:19
+      passkey-id: passkey-id,
+                  ^~~~~~~~~~
+note:: source of untrusted input here
+(define-public (reactivate-passkey (passkey-id (buff 65)))
+                                    ^~~~~~~~~~
+error: detected two execution paths, returning two different expression types (got '(response UnknownType uint)' and '(response UnknownType (response UnknownType uint))')
+--> contracts\wallet-core.clar:230:22
+      (has-approvals (try! (has-enough-approvals tx-id)))
+                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+warning: use of potentially unchecked data
+--> contracts\device-manager.clar:141:34
+      { owner: owner, device-id: device-id }
+                                 ^~~~~~~~~
+note:: source of untrusted input here
+    (device-id (buff 65))
+     ^~~~~~~~~
+warning: use of potentially unchecked data
+--> contracts\device-manager.clar:144:22
+        device-name: device-name,
+                     ^~~~~~~~~~~
+note:: source of untrusted input here
+    (device-name (string-ascii 50))
+     ^~~~~~~~~~~
+warning: use of potentially unchecked data
+--> contracts\device-manager.clar:155:22
+      { device-list: (unwrap-panic (as-max-len? (concat current-devices (list device-id)) u20)) }
+                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+note:: source of untrusted input here
+    (device-id (buff 65))
+     ^~~~~~~~~
+warning: use of potentially unchecked data
+--> contracts\device-manager.clar:160:20
+      { device-id: device-id }
+                   ^~~~~~~~~
+note:: source of untrusted input here
+    (device-id (buff 65))
+     ^~~~~~~~~
+warning: use of potentially unchecked data
+--> contracts\device-manager.clar:189:34
+      { owner: owner, device-id: device-id }
+                                 ^~~~~~~~~
+note:: source of untrusted input here
+    (device-id (buff 65))
+     ^~~~~~~~~
+warning: use of potentially unchecked data
+--> contracts\device-manager.clar:206:34
+      { owner: owner, device-id: device-id }
+                                 ^~~~~~~~~
+note:: source of untrusted input here
+(define-public (revoke-device (device-id (buff 65)))
+                               ^~~~~~~~~
+warning: use of potentially unchecked data
+--> contracts\device-manager.clar:212:20
+      { device-id: device-id }
+                   ^~~~~~~~~
+note:: source of untrusted input here
+(define-public (revoke-device (device-id (buff 65)))
+                               ^~~~~~~~~
+warning: use of potentially unchecked data
+--> contracts\device-manager.clar:232:34
+      { owner: owner, device-id: device-id }
+                                 ^~~~~~~~~
+note:: source of untrusted input here
+(define-public (restore-device (device-id (buff 65)))
+                                ^~~~~~~~~
+warning: use of potentially unchecked data
+--> contracts\device-manager.clar:238:20
+      { device-id: device-id }
+                   ^~~~~~~~~
+note:: source of untrusted input here
+(define-public (restore-device (device-id (buff 65)))
+                                ^~~~~~~~~
+warning: use of potentially unchecked data
+--> contracts\device-manager.clar:266:34
+      { owner: owner, device-id: device-id }
+                                 ^~~~~~~~~
+note:: source of untrusted input here
+    (device-id (buff 65))
+     ^~~~~~~~~
+warning: use of potentially unchecked data
+--> contracts\device-manager.clar:272:20
+      { device-id: device-id }
+                   ^~~~~~~~~
+note:: source of untrusted input here
+    (device-id (buff 65))
+     ^~~~~~~~~
+warning: use of potentially unchecked data
+--> contracts\device-manager.clar:275:22
+        last-action: action
+                     ^~~~~~
+note:: source of untrusted input here
+    (action (string-ascii 100))
+     ^~~~~~
+warning: use of potentially unchecked data
+--> contracts\device-manager.clar:293:31
+    (ok (has-permission owner device-id required-permission))
+                              ^~~~~~~~~
+note:: source of untrusted input here
+    (device-id (buff 65))
+     ^~~~~~~~~
+warning: use of potentially unchecked data
+--> contracts\device-manager.clar:293:41
+    (ok (has-permission owner device-id required-permission))
+                                        ^~~~~~~~~~~~~~~~~~~
+note:: source of untrusted input here
+    (required-permission (string-ascii 20))
+     ^~~~~~~~~~~~~~~~~~~
+warning: use of potentially unchecked data
+--> contracts\recovery-guardian.clar:170:17
+      guardian: guardian,
+                ^~~~~~~~
+note:: source of untrusted input here
+(define-public (add-guardian (guardian principal))
+                              ^~~~~~~~
+warning: use of potentially unchecked data
+--> contracts\recovery-guardian.clar:179:22
+      guardian-list: (unwrap-panic (as-max-len? (concat guardian-list (list guardian)) u10)),
+                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+note:: source of untrusted input here
+(define-public (add-guardian (guardian principal))
+                              ^~~~~~~~
+warning: use of potentially unchecked data
+--> contracts\recovery-guardian.clar:204:17
+      guardian: guardian,
+                ^~~~~~~~
+note:: source of untrusted input here
+(define-public (remove-guardian (guardian principal))
+                                 ^~~~~~~~
+warning: use of potentially unchecked data
+--> contracts\recovery-guardian.clar:267:41
+    (map-set recovery-requests { owner: account-owner } {
+                                        ^~~~~~~~~~~~~
+note:: source of untrusted input here
+    (account-owner principal)
+     ^~~~~~~~~~~~~
+warning: use of potentially unchecked data
+--> contracts\recovery-guardian.clar:268:18
+      new-owner: new-owner,
+                 ^~~~~~~~~
+note:: source of untrusted input here
+    (new-owner principal)
+     ^~~~~~~~~
+warning: use of potentially unchecked data
+--> contracts\recovery-guardian.clar:302:41
+    (map-set recovery-requests { owner: account-owner }
+                                        ^~~~~~~~~~~~~
+note:: source of untrusted input here
+(define-public (approve-recovery (account-owner principal))
+                                  ^~~~~~~~~~~~~
+warning: use of potentially unchecked data
+--> contracts\recovery-guardian.clar:311:14
+      owner: account-owner,
+             ^~~~~~~~~~~~~
+note:: source of untrusted input here
+(define-public (approve-recovery (account-owner principal))
+                                  ^~~~~~~~~~~~~
+warning: use of potentially unchecked data
+--> contracts\recovery-guardian.clar:336:47
+          (map-set recovery-requests { owner: account-owner }
+                                              ^~~~~~~~~~~~~
+note:: source of untrusted input here
+(define-public (execute-recovery (account-owner principal))
+                                  ^~~~~~~~~~~~~
+warning: use of potentially unchecked data
+--> contracts\recovery-guardian.clar:400:41
+    (map-set recovery-requests { owner: account-owner }
+                                        ^~~~~~~~~~~~~
+note:: source of untrusted input here
+(define-public (emergency-recovery (account-owner principal))
+                                    ^~~~~~~~~~~~~
+! 27 warnings detected
+x 1 error detected
+
+----------------------------
+Hint: what's next?
+Once you are ready to write TypeScript unit tests for your contract, run the following command:
+
+  $ npm install
+  $ npm test
+    Run all run tests in the ./tests folder.
+
+Find more information on testing with Clarinet here: https://docs.hiro.so/stacks/clarinet-js-sdk
+These hints can be disabled in the ~/.clarinet/clarinetrc.toml file.
+  $ mkdir -p ~/.clarinet; echo "enable_hints = false" >> ~/.clarinet/clarinetrc.toml
+----------------------------

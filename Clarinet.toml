@@ -1,0 +1,65 @@
+[project]
+name = "passkey-based-bitcoin-defi-wallet"
+description = "A hardware-secured, biometric-authenticated DeFi wallet leveraging WebAuthn passkeys for Bitcoin-native operations"
+documentation_url = ""
+authors = []
+telemetry = true
+cache_dir = "./.cache"
+requirements = []
+boot_contracts = []
+
+[project.costs]
+large_contract = 100000
+medium_contract = 50000
+small_contract = 10000
+
+# [contracts.counter]
+# path = "contracts/counter.clar"
+# epoch = "latest"
+
+[contracts.trait-definitions]
+path = "contracts/trait-definitions.clar"
+clarity_version = 4
+epoch = "3.3"
+
+[contracts.passkey-registry]
+path = "contracts/passkey-registry.clar"
+clarity_version = 4
+epoch = "3.3"
+
+[contracts.wallet-core]
+path = "contracts/wallet-core.clar"
+clarity_version = 4
+epoch = "3.3"
+
+[contracts.device-manager]
+path = "contracts/device-manager.clar"
+clarity_version = 4
+epoch = "3.3"
+
+[contracts.recovery-guardian]
+path = "contracts/recovery-guardian.clar"
+clarity_version = 4
+epoch = "3.3"
+
+[repl]
+# Enable Clarity 4 features (Stacks 3.0)
+costs_version = 3
+parser_version = 2
+
+[repl.analysis]
+passes = ["check_checker"]
+
+[repl.analysis.check_checker]
+strict = false
+trusted_sender = false
+trusted_caller = false
+callee_filter = false
+
+# Check-checker settings:
+# trusted_sender: if true, inputs are trusted after tx_sender has been checked.
+# trusted_caller: if true, inputs are trusted after contract-caller has been checked.
+# callee_filter: if true, untrusted data may be passed into a private function without a
+# warning, if it gets checked inside. This check will also propagate up to the
+# caller.
+# More informations: https://www.hiro.so/blog/new-safety-checks-in-clarinet
