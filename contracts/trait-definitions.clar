@@ -57,3 +57,21 @@
     (approve-recovery (principal) (response bool uint))
   )
 )
+
+
+;; Standard interfaces for the Passkey Wallet Ecosystem
+(define-trait wallet-core-trait
+  (
+    (initialize-wallet (uint) (response bool uint))
+    (deposit (uint) (response bool uint))
+    (create-withdrawal (principal uint (buff 65)) (response uint uint))
+    (execute-transaction (uint) (response bool uint))
+  )
+)
+
+(define-trait registry-trait
+  (
+    (register-passkey ((buff 65) (string-ascii 50)) (response bool uint))
+    (is-passkey-registered (principal (buff 65)) (response bool uint))
+  )
+)

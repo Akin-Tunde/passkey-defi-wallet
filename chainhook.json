@@ -1,0 +1,12 @@
+{
+  "if_this": {
+    "scope": "print_event",
+    "contract_identifier": "ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.wallet-core"
+  },
+  "then_that": {
+    "http_post": {
+      "url": "https://your-api.com/webhooks/wallet",
+      "authorization_header": "Bearer SECRET_TOKEN"
+    }
+  }
+}

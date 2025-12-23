@@ -311,3 +311,115 @@
     (ok true)
   )
 )
+;; Wallet Core with Protocol Fees and Chainhook Events
+(define-constant TREASURY 'STNHKEPYEPJ8ET55ZZ0M5A34J0R3N5FM2CMMMAZ6)
+(define-constant REGISTRATION-FEE u1000000) ;; 1 STX protocol fee
+(define-constant TRANSACTION-FEE u50000)    ;; 0.05 STX service fee
+
+(define-constant ERR-NOT-AUTHORIZED u200)
+(define-constant ERR-INSUFFICIENT-BALANCE u201)
+(define-constant ERR-WALLET-NOT-FOUND u203)
+(define-constant ERR-MULTISIG-THRESHOLD-NOT-MET u205)
+
+(define-map wallets
+  { owner: principal }
+  { balance: uint, nonce: uint, multisig-threshold: uint }
+)
+
+(define-map pending-transactions
+  { tx-id: uint }
+  { from: principal, to: principal, amount: uint, approvals: (list 10 (buff 65)), executed: bool }
+)
+
+(define-data-var next-tx-id uint u0)
+
+;; Read-only: Get Revenue Status
+(define-read-only (get-protocol-treasury)
+  (ok TREASURY)
+)
+
+(define-public (initialize-wallet (initial-threshold uint))
+  (let ((owner tx-sender))
+    (asserts! (is-none (map-get? wallets { owner: owner })) (err ERR-NOT-AUTHORIZED))
+    
+    ;; COLLECT PROTOCOL REVENUE
+    (try! (stx-transfer? REGISTRATION-FEE tx-sender TREASURY))
+
+    (map-set wallets { owner: owner } {
+      balance: u0,
+      nonce: u0,
+      multisig-threshold: initial-threshold
+    })
+
+    ;; CHAINHOOK EVENT
+    (print { event: "wallet-created", owner: owner, fee-paid: REGISTRATION-FEE })
+    (ok true)
+  )
+)
+
+(define-public (deposit (amount uint))
+  (let (
+      (owner tx-sender)
+      (wallet-data (unwrap! (map-get? wallets { owner: owner }) (err ERR-WALLET-NOT-FOUND)))
+    )
+    (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
+    (map-set wallets { owner: owner }
+      (merge wallet-data { balance: (+ (get balance wallet-data) amount) })
+    )
+    (print { event: "deposit", owner: owner, amount: amount })
+    (ok true)
+  )
+)
+
+(define-public (create-withdrawal (to principal) (amount uint) (passkey-id (buff 65)))
+  (let (
+      (owner tx-sender)
+      (tx-id (var-get next-tx-id))
+      (wallet-data (unwrap! (map-get? wallets { owner: owner }) (err ERR-WALLET-NOT-FOUND)))
+    )
+    (asserts! (>= (get balance wallet-data) (+ amount TRANSACTION-FEE)) (err ERR-INSUFFICIENT-BALANCE))
+    
+    (map-set pending-transactions { tx-id: tx-id } {
+      from: owner,
+      to: to,
+      amount: amount,
+      approvals: (list passkey-id),
+      executed: false
+    })
+
+    (var-set next-tx-id (+ tx-id u1))
+    (try! (contract-call? .passkey-registry update-passkey-usage passkey-id))
+    
+    ;; CHAINHOOK EVENT: Notifies user they created a pending tx
+    (print { event: "tx-initiated", tx-id: tx-id, owner: owner, amount: amount })
+    (ok tx-id)
+  )
+)
+
+(define-public (execute-transaction (tx-id uint))
+  (let (
+      (owner tx-sender)
+      (tx-data (unwrap! (map-get? pending-transactions { tx-id: tx-id }) (err ERR-WALLET-NOT-FOUND)))
+      (wallet-data (unwrap! (map-get? wallets { owner: owner }) (err ERR-WALLET-NOT-FOUND)))
+      (threshold (get multisig-threshold wallet-data))
+    )
+    (asserts! (>= (len (get approvals tx-data)) threshold) (err ERR-MULTISIG-THRESHOLD-NOT-MET))
+    (asserts! (not (get executed tx-data)) (err ERR-NOT-AUTHORIZED))
+
+    ;; PAY SERVICE FEE FROM WALLET BALANCE
+    (try! (as-contract (stx-transfer? TRANSACTION-FEE (as-contract tx-sender) TREASURY)))
+    
+    ;; PAY WITHDRAWAL
+    (try! (as-contract (stx-transfer? (get amount tx-data) (as-contract tx-sender) (get to tx-data))))
+
+    (map-set wallets { owner: owner }
+      (merge wallet-data { balance: (- (get balance wallet-data) (+ (get amount tx-data) TRANSACTION-FEE)) })
+    )
+    
+    (map-set pending-transactions { tx-id: tx-id } (merge tx-data { executed: true }))
+
+    ;; CHAINHOOK EVENT: Revenue generated
+    (print { event: "tx-executed", tx-id: tx-id, fee-collected: TRANSACTION-FEE, amount: (get amount tx-data) })
+    (ok true)
+  )
+)

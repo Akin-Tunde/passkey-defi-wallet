@@ -220,3 +220,58 @@
     (ok true)
   )
 )
+
+
+(define-constant CONTRACT-OWNER tx-sender)
+(define-constant ERR-NOT-AUTHORIZED u100)
+(define-constant ERR-PASSKEY-EXISTS u101)
+(define-constant ERR-MAX-PASSKEYS-REACHED u104)
+
+(define-map passkey-registry
+  { owner: principal, passkey-id: (buff 65) }
+  { created-at: uint, device-type: (string-ascii 50), is-active: bool }
+)
+
+(define-map account-passkeys
+  { owner: principal }
+  { passkey-list: (list 10 (buff 65)) }
+)
+
+(define-read-only (get-account-passkeys (owner principal))
+  (default-to { passkey-list: (list) } (map-get? account-passkeys { owner: owner }))
+)
+
+(define-read-only (is-passkey-registered (owner principal) (passkey-id (buff 65)))
+  (is-some (map-get? passkey-registry { owner: owner, passkey-id: passkey-id }))
+)
+
+(define-public (register-passkey (passkey-id (buff 65)) (device-type (string-ascii 50)))
+  (let (
+      (owner tx-sender)
+      (current-passkeys (get passkey-list (get-account-passkeys owner)))
+    )
+    (asserts! (not (is-passkey-registered owner passkey-id)) (err ERR-PASSKEY-EXISTS))
+    (asserts! (< (len current-passkeys) u10) (err ERR-MAX-PASSKEYS-REACHED))
+
+    (map-set passkey-registry { owner: owner, passkey-id: passkey-id }
+      { created-at: stacks-block-height, device-type: device-type, is-active: true }
+    )
+
+    ;; Clarity 4: list-concat
+    (map-set account-passkeys { owner: owner } 
+      { passkey-list: (unwrap-panic (as-max-len? (concat current-passkeys (list passkey-id)) u10)) }
+    )
+
+    ;; HIRO CHAINHOOK EVENT
+    (print { event: "passkey-registered", owner: owner, passkey-id: passkey-id, device: device-type })
+    (ok true)
+  )
+)
+
+(define-public (update-passkey-usage (passkey-id (buff 65)))
+  (begin
+    (asserts! (is-passkey-registered tx-sender passkey-id) (err ERR-NOT-AUTHORIZED))
+    (print { event: "passkey-used", owner: tx-sender, passkey-id: passkey-id })
+    (ok true)
+  )
+)
