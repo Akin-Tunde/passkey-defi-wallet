@@ -1,6 +1,5 @@
-;; Recovery Guardian Contract
-;; Social recovery mechanism with guardian-based account recovery
-;; Features: principal-destruct?, list-filter-map for guardian management
+;; Recovery Guardian Contract - Final Improved Version
+;; Features: Social Recovery, Timelocks, Unanimous Emergency Bypass
 
 ;; Constants
 (define-constant CONTRACT-OWNER tx-sender)
@@ -13,20 +12,16 @@
 (define-constant ERR-THRESHOLD-NOT-MET (err u406))
 (define-constant ERR-TIMELOCK-NOT-EXPIRED (err u407))
 (define-constant ERR-INVALID-THRESHOLD (err u408))
+(define-constant ERR-CANNOT-BE-OWN-GUARDIAN (err u409))
+(define-constant ERR-DUPLICATE-APPROVAL (err u410))
+
 (define-constant MAX-GUARDIANS u10)
-(define-constant RECOVERY-TIMELOCK u144) ;; ~1 day at 10 min blocks
+(define-constant RECOVERY-TIMELOCK u144) ;; ~24 hours (144 * 10 min blocks)
 
 ;; Data structures
 (define-map guardians
-  {
-    owner: principal,
-    guardian: principal,
-  }
-  {
-    added-at: uint,
-    is-active: bool,
-    recovery-approvals: uint,
-  }
+  { owner: principal, guardian: principal }
+  { added-at: uint, is-active: bool }
 )
 
 (define-map account-guardians
@@ -34,7 +29,7 @@
   {
     guardian-list: (list 10 principal),
     guardian-threshold: uint,
-    total-guardians: uint,
+    total-guardians: uint
   }
 )
 
@@ -46,369 +41,170 @@
     approval-count: uint,
     initiated-at: uint,
     is-active: bool,
-    executed: bool,
+    executed: bool
   }
 )
 
-;; Read-only functions
+;; --- Read-only functions ---
 
-;; Get guardian info
-(define-read-only (get-guardian-info
-    (owner principal)
-    (guardian principal)
-  )
-  (map-get? guardians {
-    owner: owner,
-    guardian: guardian,
-  })
-)
-
-;; Get all guardians for an account
 (define-read-only (get-account-guardians (owner principal))
-  (default-to {
-    guardian-list: (list),
-    guardian-threshold: u0,
-    total-guardians: u0,
-  }
-    (map-get? account-guardians { owner: owner })
-  )
+  (default-to { guardian-list: (list), guardian-threshold: u0, total-guardians: u0 }
+    (map-get? account-guardians { owner: owner }))
 )
 
-;; Check if address is a guardian
-(define-read-only (is-guardian
-    (owner principal)
-    (guardian principal)
-  )
-  (match (map-get? guardians {
-    owner: owner,
-    guardian: guardian,
-  })
-    guardian-data (ok (get is-active guardian-data))
-    (ok false)
-  )
-)
-
-;; Get active recovery request
-(define-read-only (get-recovery-request (owner principal))
-  (map-get? recovery-requests { owner: owner })
-)
-
-;; Check if recovery can be executed
-(define-read-only (can-execute-recovery (owner principal))
-  (match (map-get? recovery-requests { owner: owner })
-    recovery-data (let (
-        (guardian-config (unwrap! (map-get? account-guardians { owner: owner })
-          ERR-GUARDIAN-NOT-FOUND
-        ))
-        (threshold (get guardian-threshold guardian-config))
-        (approvals (get approval-count recovery-data))
-        (timelock-expired (>= (- stacks-block-height (get initiated-at recovery-data))
-          RECOVERY-TIMELOCK
-        ))
-      )
-      (ok (and
-        (get is-active recovery-data)
-        (not (get executed recovery-data))
-        (>= approvals threshold)
-        timelock-expired
-      ))
-    )
-    (ok false)
-  )
-)
-
-;; Verify principal structure
-;; NOTE: principal-destruct? not yet available in current tooling
-;; Future: Use principal-destruct? for full validation
-(define-read-only (verify-guardian-principal (guardian principal))
-  ;; Simple validation - just verify it's a valid principal
-  (ok true)
-)
-
-;; Private functions
-
-;; Check if caller is guardian
-(define-private (is-caller-guardian (owner principal))
-  (match (map-get? guardians {
-    owner: owner,
-    guardian: tx-sender,
-  })
+(define-read-only (is-guardian (owner principal) (guardian principal))
+  (match (map-get? guardians { owner: owner, guardian: guardian })
     guardian-data (get is-active guardian-data)
     false
   )
 )
 
-;; Public functions
+(define-read-only (get-recovery-request (owner principal))
+  (map-get? recovery-requests { owner: owner })
+)
 
-;; Add a guardian
+;; --- Private functions ---
+
+(define-private (is-standard-principal (p principal))
+  ;; Check-checker validation: Ensure principal is not a contract and is standard
+  (is-standard p)
+)
+
+;; --- Public functions ---
+
+;; Add a guardian to your account
 (define-public (add-guardian (guardian principal))
   (let (
       (owner tx-sender)
-      (current-guardians (get-account-guardians owner))
-      (guardian-list (get guardian-list current-guardians))
-      (guardian-count (get total-guardians current-guardians))
+      (current-config (get-account-guardians owner))
+      (guardian-list (get guardian-list current-config))
     )
-    ;; Verify guardian principal (Clarity 4 feature)
-    ;; Note: Currently simplified - future versions will use principal-destruct?
-    ;; (try! (verify-guardian-principal guardian))
+    ;; 1. Validation (Fixes Check-checker warnings)
+    (asserts! (is-standard-principal guardian) ERR-NOT-AUTHORIZED)
+    (asserts! (not (is-eq guardian owner)) ERR-CANNOT-BE-OWN-GUARDIAN)
+    (asserts! (is-none (map-get? guardians { owner: owner, guardian: guardian })) ERR-GUARDIAN-EXISTS)
+    (asserts! (< (get total-guardians current-config) MAX-GUARDIANS) ERR-MAX-GUARDIANS-REACHED)
 
-    ;; Check guardian doesn't exist
-    (asserts!
-      (is-none (map-get? guardians {
-        owner: owner,
-        guardian: guardian,
-      }))
-      ERR-GUARDIAN-EXISTS
-    )
-
-    ;; Check max guardians limit
-    (asserts! (< guardian-count MAX-GUARDIANS) ERR-MAX-GUARDIANS-REACHED)
-
-    ;; Store guardian info
-    (map-set guardians {
-      owner: owner,
-      guardian: guardian,
-    } {
-      added-at: stacks-block-height,
-      is-active: true,
-      recovery-approvals: u0,
-    })
-
-    ;; Add to guardian list
+    ;; 2. Update state using Clarity 4 concat
+    (map-set guardians { owner: owner, guardian: guardian } { added-at: stacks-block-height, is-active: true })
     (map-set account-guardians { owner: owner } {
       guardian-list: (unwrap-panic (as-max-len? (concat guardian-list (list guardian)) u10)),
-      guardian-threshold: (get guardian-threshold current-guardians),
-      total-guardians: (+ guardian-count u1),
+      guardian-threshold: (get guardian-threshold current-config),
+      total-guardians: (+ (get total-guardians current-config) u1)
     })
-
     (ok true)
   )
 )
 
-;; Remove a guardian
-(define-public (remove-guardian (guardian principal))
-  (let (
-      (owner tx-sender)
-      (guardian-data (unwrap!
-        (map-get? guardians {
-          owner: owner,
-          guardian: guardian,
-        })
-        ERR-GUARDIAN-NOT-FOUND
-      ))
-      (current-guardians (get-account-guardians owner))
-    )
-    ;; Mark guardian as inactive
-    (map-set guardians {
-      owner: owner,
-      guardian: guardian,
-    }
-      (merge guardian-data { is-active: false })
-    )
-
-    ;; Update guardian count
-    (map-set account-guardians { owner: owner }
-      (merge current-guardians { total-guardians: (- (get total-guardians current-guardians) u1) })
-    )
-
-    (ok true)
-  )
-)
-
-;; Set guardian threshold
+;; Set how many guardians are needed to approve recovery
 (define-public (set-guardian-threshold (threshold uint))
   (let (
       (owner tx-sender)
-      (current-guardians (get-account-guardians owner))
-      (total-guardians (get total-guardians current-guardians))
+      (current-config (get-account-guardians owner))
     )
-    ;; Validate threshold
-    (asserts! (and (>= threshold u1) (<= threshold total-guardians))
-      ERR-INVALID-THRESHOLD
-    )
-
+    (asserts! (and (>= threshold u1) (<= threshold (get total-guardians current-config))) ERR-INVALID-THRESHOLD)
     (map-set account-guardians { owner: owner }
-      (merge current-guardians { guardian-threshold: threshold })
+      (merge current-config { guardian-threshold: threshold })
     )
-
     (ok true)
   )
 )
 
-;; Initiate recovery (called by guardian)
-(define-public (initiate-recovery
-    (account-owner principal)
-    (new-owner principal)
-  )
-  (let ((guardian-data (unwrap!
-      (map-get? guardians {
-        owner: account-owner,
-        guardian: tx-sender,
-      })
-      ERR-NOT-AUTHORIZED
-    )))
-    ;; Verify caller is active guardian
-    (asserts! (get is-active guardian-data) ERR-NOT-AUTHORIZED)
-
-    ;; Verify new owner principal
-    ;; Note: Currently simplified - future versions will use principal-destruct?
-    ;; (try! (verify-guardian-principal new-owner))
-
-    ;; Check no active recovery
-    (asserts!
-      (match (map-get? recovery-requests { owner: account-owner })
-        existing-recovery (not (get is-active existing-recovery))
-        true
-      )
-      ERR-RECOVERY-ALREADY-ACTIVE
+;; Step 1 of Recovery: A guardian starts the process
+(define-public (initiate-recovery (account-owner principal) (new-owner principal))
+  (let (
+      (caller tx-sender)
+      (is-auth (is-guardian account-owner caller))
+    )
+    (asserts! is-auth ERR-NOT-AUTHORIZED)
+    (asserts! (is-standard-principal new-owner) ERR-NOT-AUTHORIZED)
+    
+    ;; Ensure no recovery is already running
+    (match (map-get? recovery-requests { owner: account-owner })
+      request (asserts! (not (get is-active request)) ERR-RECOVERY-ALREADY-ACTIVE)
+      true
     )
 
-    ;; Create recovery request
     (map-set recovery-requests { owner: account-owner } {
       new-owner: new-owner,
-      approvals: (list tx-sender),
+      approvals: (list caller),
       approval-count: u1,
       initiated-at: stacks-block-height,
       is-active: true,
-      executed: false,
+      executed: false
     })
-
+    (print { event: "recovery-initiated", owner: account-owner, by: caller })
     (ok true)
   )
 )
 
-;; Approve recovery (called by other guardians)
+;; Step 2 of Recovery: Other guardians vote
 (define-public (approve-recovery (account-owner principal))
   (let (
-      (guardian-data (unwrap!
-        (map-get? guardians {
-          owner: account-owner,
-          guardian: tx-sender,
-        })
-        ERR-NOT-AUTHORIZED
-      ))
-      (recovery-data (unwrap! (map-get? recovery-requests { owner: account-owner })
-        ERR-RECOVERY-NOT-ACTIVE
-      ))
-      (current-approvals (get approvals recovery-data))
+      (caller tx-sender)
+      (request (unwrap! (map-get? recovery-requests { owner: account-owner }) ERR-RECOVERY-NOT-ACTIVE))
+      (current-approvals (get approvals request))
     )
-    ;; Verify caller is active guardian
-    (asserts! (get is-active guardian-data) ERR-NOT-AUTHORIZED)
+    ;; 1. Check if caller is an authorized guardian
+    (asserts! (is-guardian account-owner caller) ERR-NOT-AUTHORIZED)
+    ;; 2. Prevent duplicate voting
+    (asserts! (is-none (index-of current-approvals caller)) ERR-DUPLICATE-APPROVAL)
+    ;; 3. Ensure recovery is active
+    (asserts! (get is-active request) ERR-RECOVERY-NOT-ACTIVE)
 
-    ;; Verify recovery is active
-    (asserts! (get is-active recovery-data) ERR-RECOVERY-NOT-ACTIVE)
-
-    ;; Add approval
     (map-set recovery-requests { owner: account-owner }
-      (merge recovery-data {
-        approvals: (unwrap-panic (as-max-len? (concat current-approvals (list tx-sender)) u10)),
-        approval-count: (+ (get approval-count recovery-data) u1),
+      (merge request {
+        approvals: (unwrap-panic (as-max-len? (concat current-approvals (list caller)) u10)),
+        approval-count: (+ (get approval-count request) u1)
       })
     )
-
-    ;; Update guardian's recovery approval count
-    (map-set guardians {
-      owner: account-owner,
-      guardian: tx-sender,
-    }
-      (merge guardian-data { recovery-approvals: (+ (get recovery-approvals guardian-data) u1) })
-    )
-
     (ok true)
   )
 )
 
-;; Execute recovery (can be called by anyone once conditions are met)
+;; Step 3: Execution after timelock (Standard Path)
 (define-public (execute-recovery (account-owner principal))
   (let (
-      (recovery-data (unwrap! (map-get? recovery-requests { owner: account-owner })
-        ERR-RECOVERY-NOT-ACTIVE
-      ))
-      (guardian-config (unwrap! (map-get? account-guardians { owner: account-owner })
-        ERR-GUARDIAN-NOT-FOUND
-      ))
-      (execution-check (can-execute-recovery account-owner))
+      (request (unwrap! (map-get? recovery-requests { owner: account-owner }) ERR-RECOVERY-NOT-ACTIVE))
+      (config (get-account-guardians account-owner))
+      (blocks-passed (- stacks-block-height (get initiated-at request)))
     )
-    (match execution-check
-      can-execute (if can-execute
-        (begin
-          ;; Mark recovery as executed
-          (map-set recovery-requests { owner: account-owner }
-            (merge recovery-data {
-              executed: true,
-              is-active: false,
-            })
-          )
+    (asserts! (get is-active request) ERR-RECOVERY-NOT-ACTIVE)
+    (asserts! (>= (get approval-count request) (get guardian-threshold config)) ERR-THRESHOLD-NOT-MET)
+    (asserts! (>= blocks-passed RECOVERY-TIMELOCK) ERR-TIMELOCK-NOT-EXPIRED)
 
-          ;; Transfer guardian configuration to new owner
-          (map-set account-guardians { owner: (get new-owner recovery-data) }
-            guardian-config
-          )
-
-          ;; Note: Actual wallet transfer would happen here in integration with wallet-core
-          ;; This would require a cross-contract call to transfer wallet ownership
-
-          (ok (get new-owner recovery-data))
-        )
-        ERR-THRESHOLD-NOT-MET
-      )
-      error (err error)
-    )
+    ;; Finalize
+    (map-set recovery-requests { owner: account-owner } (merge request { is-active: false, executed: true }))
+    
+    ;; In a real integration, here you would call wallet-core to update the owner
+    (print { event: "recovery-executed", owner: account-owner, new-owner: (get new-owner request) })
+    (ok (get new-owner request))
   )
 )
 
-;; Cancel recovery (owner only, before execution)
+;; Emergency Path: If ALL guardians agree, bypass the 24h timelock
+(define-public (emergency-recovery (account-owner principal))
+  (let (
+      (request (unwrap! (map-get? recovery-requests { owner: account-owner }) ERR-RECOVERY-NOT-ACTIVE))
+      (config (get-account-guardians account-owner))
+    )
+    ;; Requires UNANIMOUS consent (all guardians)
+    (asserts! (is-eq (get approval-count request) (get total-guardians config)) ERR-THRESHOLD-NOT-MET)
+    
+    (map-set recovery-requests { owner: account-owner } (merge request { is-active: false, executed: true }))
+    (ok (get new-owner request))
+  )
+)
+
+;; Cancellation: The original owner can cancel if they still have access
 (define-public (cancel-recovery)
   (let (
       (owner tx-sender)
-      (recovery-data (unwrap! (map-get? recovery-requests { owner: owner })
-        ERR-RECOVERY-NOT-ACTIVE
-      ))
+      (request (unwrap! (map-get? recovery-requests { owner: owner }) ERR-RECOVERY-NOT-ACTIVE))
     )
-    ;; Verify recovery is active and not executed
-    (asserts! (get is-active recovery-data) ERR-RECOVERY-NOT-ACTIVE)
-    (asserts! (not (get executed recovery-data)) ERR-NOT-AUTHORIZED)
-
-    ;; Cancel recovery
-    (map-set recovery-requests { owner: owner }
-      (merge recovery-data { is-active: false })
-    )
-
+    (asserts! (not (get executed request)) ERR-NOT-AUTHORIZED)
+    (map-set recovery-requests { owner: owner } (merge request { is-active: false }))
+    (print { event: "recovery-cancelled", owner: owner })
     (ok true)
-  )
-)
-
-;; Emergency recovery with all guardians (bypasses timelock)
-(define-public (emergency-recovery (account-owner principal))
-  (let (
-      (recovery-data (unwrap! (map-get? recovery-requests { owner: account-owner })
-        ERR-RECOVERY-NOT-ACTIVE
-      ))
-      (guardian-config (unwrap! (map-get? account-guardians { owner: account-owner })
-        ERR-GUARDIAN-NOT-FOUND
-      ))
-      (total-guardians (get total-guardians guardian-config))
-      (current-approvals (get approval-count recovery-data))
-    )
-    ;; Verify ALL guardians have approved (emergency bypass)
-    (asserts! (is-eq current-approvals total-guardians) ERR-THRESHOLD-NOT-MET)
-
-    ;; Verify recovery is active
-    (asserts! (get is-active recovery-data) ERR-RECOVERY-NOT-ACTIVE)
-
-    ;; Execute immediately without timelock
-    (map-set recovery-requests { owner: account-owner }
-      (merge recovery-data {
-        executed: true,
-        is-active: false,
-      })
-    )
-
-    ;; Transfer guardian configuration
-    (map-set account-guardians { owner: (get new-owner recovery-data) }
-      guardian-config
-    )
-
-    (ok (get new-owner recovery-data))
   )
 )
