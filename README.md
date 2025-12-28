@@ -13,7 +13,6 @@ This project demonstrates advanced smart contract development using Clarity 4, i
 - **Hardware Security**: Integration-ready for HSM and biometric signing
 
 ## Clarity 4 Features Implemented
-
 This project showcases several Clarity 4 features:
 
 ### 1. List Operations (`concat`)
